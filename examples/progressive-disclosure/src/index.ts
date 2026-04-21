@@ -7,7 +7,7 @@ export {
     type QueryMatcher
 } from './server.js';
 export {
-    listIndexedTools,
+    listToolsCatalog,
     describeTools,
     ProgressiveDisclosureCache,
     type ProgressiveDisclosureCacheOptions,

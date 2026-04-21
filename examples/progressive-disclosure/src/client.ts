@@ -9,12 +9,12 @@
 import type {
     DescribeToolsRequestParams,
     DescribeToolsResult,
-    IndexedTool,
-    ListIndexedToolsRequestParams,
-    ListIndexedToolsResult,
+    ToolCatalogEntry,
+    ListToolsCatalogRequestParams,
+    ListToolsCatalogResult,
     Tool
 } from './types.js';
-import { METHOD_TOOLS_DESCRIBE, METHOD_TOOLS_INDEX } from './types.js';
+import { METHOD_TOOLS_DESCRIBE, METHOD_TOOLS_CATALOG } from './types.js';
 
 /** Minimal transport contract — produced by the host's MCP client. */
 export type RequestFn = <TResult>(method: string, params?: unknown) => Promise<TResult>;
@@ -23,11 +23,11 @@ export type RequestFn = <TResult>(method: string, params?: unknown) => Promise<T
 // Convenience wrappers.
 // -----------------------------------------------------------------------------
 
-export async function listIndexedTools(
+export async function listToolsCatalog(
     request: RequestFn,
-    params: ListIndexedToolsRequestParams = {}
-): Promise<ListIndexedToolsResult> {
-    return request<ListIndexedToolsResult>(METHOD_TOOLS_INDEX, params);
+    params: ListToolsCatalogRequestParams = {}
+): Promise<ListToolsCatalogResult> {
+    return request<ListToolsCatalogResult>(METHOD_TOOLS_CATALOG, params);
 }
 
 export async function describeTools(
@@ -38,7 +38,7 @@ export async function describeTools(
 }
 
 // -----------------------------------------------------------------------------
-// Cache — implements the SEP §6 lookup pattern.
+// Cache — implements the SEP §5 invalidation pattern.
 // -----------------------------------------------------------------------------
 
 export interface ProgressiveDisclosureCacheOptions {
@@ -65,7 +65,7 @@ export interface CachePersistence {
 /**
  * In-memory schema cache, keyed by `${serverIdentity}::${toolName}::${schemaHash}`.
  *
- * On a `tools/index` response, call `materialize(indexed, request)` —
+ * On a `tools/catalog` response, call `materialize(entries, request)` —
  * cache hits return the full Tool records immediately; misses trigger
  * a single batched `tools/describe` for the missing names.
  */
@@ -93,25 +93,25 @@ export class ProgressiveDisclosureCache {
     }
 
     /**
-     * Resolve full `Tool` records for a list of `IndexedTool` records.
+     * Resolve full `Tool` records for a list of `ToolCatalogEntry` records.
      *
      * Returns Tools in the same order as the input. Cache hits avoid
      * the round trip; misses trigger a single batched `tools/describe`.
      */
-    public async materialize(indexed: readonly IndexedTool[], request: RequestFn): Promise<Tool[]> {
+    public async materialize(entries: readonly ToolCatalogEntry[], request: RequestFn): Promise<Tool[]> {
         await this.ensureLoaded();
 
         // First pass: identify hits and misses.
-        const result: (Tool | undefined)[] = new Array(indexed.length);
+        const result: (Tool | undefined)[] = new Array(entries.length);
         const missingNames: string[] = [];
         const missingPositions: number[] = [];
-        for (let i = 0; i < indexed.length; i++) {
-            const idx = indexed[i]!;
-            const cached = this.entries.get(this.key(idx.name, idx.schemaHash));
+        for (let i = 0; i < entries.length; i++) {
+            const entry = entries[i]!;
+            const cached = this.entries.get(this.key(entry.name, entry.schemaHash));
             if (cached) {
                 result[i] = cached;
             } else {
-                missingNames.push(idx.name);
+                missingNames.push(entry.name);
                 missingPositions.push(i);
             }
         }
@@ -127,8 +127,8 @@ export class ProgressiveDisclosureCache {
             for (let j = 0; j < tools.length; j++) {
                 const tool = tools[j]!;
                 const pos = missingPositions[j]!;
-                const idx = indexed[pos]!;
-                this.entries.set(this.key(tool.name, idx.schemaHash), tool);
+                const entry = entries[pos]!;
+                this.entries.set(this.key(tool.name, entry.schemaHash), tool);
                 result[pos] = tool;
             }
 
@@ -141,12 +141,12 @@ export class ProgressiveDisclosureCache {
 
     /**
      * Invalidate cache entries whose hash no longer appears in the given
-     * fresh index. Use after `notifications/tools/list_changed` plus a
-     * fresh `tools/index` call.
+     * fresh catalog. Use after `notifications/tools/list_changed` plus a
+     * fresh `tools/catalog` call.
      */
-    public reconcile(freshIndex: readonly IndexedTool[]): { evicted: number } {
+    public reconcile(freshCatalog: readonly ToolCatalogEntry[]): { evicted: number } {
         const valid = new Set<string>();
-        for (const idx of freshIndex) valid.add(this.key(idx.name, idx.schemaHash));
+        for (const e of freshCatalog) valid.add(this.key(e.name, e.schemaHash));
 
         let evicted = 0;
         for (const k of this.entries.keys()) {

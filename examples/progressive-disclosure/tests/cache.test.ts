@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ProgressiveDisclosureCache } from '../src/client.js';
 import { ProgressiveDisclosureServer } from '../src/server.js';
 import type { Tool } from '../src/types.js';
-import { METHOD_TOOLS_DESCRIBE, METHOD_TOOLS_INDEX } from '../src/types.js';
+import { METHOD_TOOLS_DESCRIBE, METHOD_TOOLS_CATALOG } from '../src/types.js';
 
 function makeTool(name: string): Tool {
     return {
@@ -16,7 +16,7 @@ function makeRequest(server: ProgressiveDisclosureServer) {
     const calls: { method: string; params: unknown }[] = [];
     const fn = async <T>(method: string, params?: unknown): Promise<T> => {
         calls.push({ method, params });
-        if (method === METHOD_TOOLS_INDEX) return server.listIndexedTools(params as never) as T;
+        if (method === METHOD_TOOLS_CATALOG) return server.listToolsCatalog(params as never) as T;
         if (method === METHOD_TOOLS_DESCRIBE) return server.describeTools(params as never) as T;
         throw new Error(`unknown method ${method}`);
     };
@@ -30,8 +30,8 @@ describe('ProgressiveDisclosureCache', () => {
         const cache = new ProgressiveDisclosureCache({ serverIdentity: 's1' });
         const { fn, calls } = makeRequest(server);
 
-        const indexed = server.listIndexedTools().tools;
-        const resolved = await cache.materialize(indexed, fn);
+        const entries = server.listToolsCatalog().tools;
+        const resolved = await cache.materialize(entries, fn);
 
         expect(resolved.map((t) => t.name)).toEqual(['a', 'b', 'c']);
         const describes = calls.filter((c) => c.method === METHOD_TOOLS_DESCRIBE);
@@ -45,13 +45,13 @@ describe('ProgressiveDisclosureCache', () => {
         const cache = new ProgressiveDisclosureCache({ serverIdentity: 's1' });
         const { fn, calls } = makeRequest(server);
 
-        const indexed = server.listIndexedTools().tools;
-        await cache.materialize(indexed, fn); // turn 1
+        const entries = server.listToolsCatalog().tools;
+        await cache.materialize(entries, fn); // turn 1
         const before = calls.length;
-        await cache.materialize(indexed, fn); // turn 2
-        await cache.materialize(indexed, fn); // turn 3
+        await cache.materialize(entries, fn); // turn 2
+        await cache.materialize(entries, fn); // turn 3
 
-        // Index calls were issued by the test, not the cache; the cache only
+        // Catalog calls were issued by the test, not the cache; the cache only
         // issues describes. Verify no additional describes happened.
         const describesAfter = calls.slice(before).filter((c) => c.method === METHOD_TOOLS_DESCRIBE);
         expect(describesAfter).toHaveLength(0);
@@ -63,14 +63,14 @@ describe('ProgressiveDisclosureCache', () => {
         const cache = new ProgressiveDisclosureCache({ serverIdentity: 's1' });
         const { fn, calls } = makeRequest(server);
 
-        const indexed = server.listIndexedTools().tools;
+        const entries = server.listToolsCatalog().tools;
         // Prime cache with [a, b].
-        await cache.materialize([indexed[0]!, indexed[1]!], fn);
+        await cache.materialize([entries[0]!, entries[1]!], fn);
         const before = calls.length;
 
         // Request [a, c, b, d] — c and d are misses.
         const resolved = await cache.materialize(
-            [indexed[0]!, indexed[2]!, indexed[1]!, indexed[3]!],
+            [entries[0]!, entries[2]!, entries[1]!, entries[3]!],
             fn
         );
         expect(resolved.map((t) => t.name)).toEqual(['a', 'c', 'b', 'd']);
@@ -85,12 +85,12 @@ describe('ProgressiveDisclosureCache', () => {
         const cache = new ProgressiveDisclosureCache({ serverIdentity: 's1' });
         const { fn } = makeRequest(server);
 
-        const indexed = server.listIndexedTools().tools;
-        await cache.materialize(indexed, fn);
+        const entries = server.listToolsCatalog().tools;
+        await cache.materialize(entries, fn);
         expect(cache._size()).toBe(2);
 
         // Simulate `b`'s schema changing.
-        const fresh = server.listIndexedTools().tools;
+        const fresh = server.listToolsCatalog().tools;
         fresh[1]!.schemaHash = 'cafebabe'.repeat(8);
 
         const r = cache.reconcile(fresh);
@@ -108,8 +108,8 @@ describe('ProgressiveDisclosureCache', () => {
         const cache = new ProgressiveDisclosureCache({ serverIdentity: 's1', persistence });
         const { fn } = makeRequest(server);
 
-        const indexed = server.listIndexedTools().tools;
-        await cache.materialize(indexed, fn);
+        const entries = server.listToolsCatalog().tools;
+        await cache.materialize(entries, fn);
 
         expect(persistence.load).toHaveBeenCalledOnce();
         expect(persistence.save).toHaveBeenCalledOnce();
@@ -122,10 +122,10 @@ describe('ProgressiveDisclosureCache', () => {
         const cacheS2 = new ProgressiveDisclosureCache({ serverIdentity: 's2' });
         const { fn, calls } = makeRequest(server);
 
-        const indexed = server.listIndexedTools().tools;
-        await cacheS1.materialize(indexed, fn);
+        const entries = server.listToolsCatalog().tools;
+        await cacheS1.materialize(entries, fn);
         const before = calls.length;
-        await cacheS2.materialize(indexed, fn); // separate cache → fresh describe
+        await cacheS2.materialize(entries, fn); // separate cache → fresh describe
 
         const describesAfter = calls.slice(before).filter((c) => c.method === METHOD_TOOLS_DESCRIBE);
         expect(describesAfter).toHaveLength(1);

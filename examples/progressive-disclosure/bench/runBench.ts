@@ -1,6 +1,6 @@
 /**
  * Benchmark — compares baseline `tools/list` cost vs the progressive
- * `tools/index` + `tools/describe(k)` flow.
+ * `tools/catalog` + `tools/describe(k)` flow.
  *
  * Run: pnpm bench  (or: tsx bench/runBench.ts)
  *
@@ -84,16 +84,16 @@ function pct(part: number, whole: number): string {
 const tools = SAMPLE_TOOLS;
 const server = new ProgressiveDisclosureServer(tools);
 
-// Build the index payload as a client would see it.
-const indexResult = server.listIndexedTools();
-const indexPayload = JSON.stringify(indexResult);
+// Build the catalog payload as a client would see it.
+const catalogResult = server.listToolsCatalog();
+const catalogPayload = JSON.stringify(catalogResult);
 
 // Baseline: `tools/list` ships every full Tool.
 const baselinePayload = serializeBaseline(tools);
 
 const rows: Row[] = [];
 rows.push(measure(`Baseline tools/list (n=${tools.length})`, baselinePayload, estimateTokensCharsDiv4, estimateTokensJsonAware));
-rows.push(measure(`tools/index only (n=${tools.length})`, indexPayload, estimateTokensCharsDiv4, estimateTokensJsonAware));
+rows.push(measure(`tools/catalog only (n=${tools.length})`, catalogPayload, estimateTokensCharsDiv4, estimateTokensJsonAware));
 
 // Progressive scenarios for various k (number of tool schemas actually pulled this turn).
 const ks = [0, 1, 2, 3, 5, 10];
@@ -101,23 +101,23 @@ for (const k of ks) {
     const names = tools.slice(0, k).map((t) => t.name);
     const describedPayload =
         k === 0 ? '' : JSON.stringify(server.describeTools({ names }));
-    const combinedBytes = indexPayload.length + describedPayload.length;
+    const combinedBytes = catalogPayload.length + describedPayload.length;
     rows.push({
-        label: `tools/index + tools/describe(k=${k})`,
+        label: `tools/catalog + tools/describe(k=${k})`,
         bytes: combinedBytes,
-        tokensCharsDiv4: estimateTokensCharsDiv4(indexPayload + describedPayload),
-        tokensJsonAware: estimateTokensJsonAware(indexPayload + describedPayload)
+        tokensCharsDiv4: estimateTokensCharsDiv4(catalogPayload + describedPayload),
+        tokensJsonAware: estimateTokensJsonAware(catalogPayload + describedPayload)
     });
 }
 
-// Steady-state cache: index round-tripped, all schemas already cached.
-// On a list_changed notification we still pay tools/index, but tools/describe
+// Steady-state cache: catalog round-tripped, all schemas already cached.
+// On a list_changed notification we still pay tools/catalog, but tools/describe
 // is skipped entirely if no hashes changed.
 rows.push({
-    label: 'Steady state (full cache hit, index only)',
-    bytes: indexPayload.length,
-    tokensCharsDiv4: estimateTokensCharsDiv4(indexPayload),
-    tokensJsonAware: estimateTokensJsonAware(indexPayload)
+    label: 'Steady state (full cache hit, catalog only)',
+    bytes: catalogPayload.length,
+    tokensCharsDiv4: estimateTokensCharsDiv4(catalogPayload),
+    tokensJsonAware: estimateTokensJsonAware(catalogPayload)
 });
 
 console.log('# Progressive Tool Disclosure — Benchmark');

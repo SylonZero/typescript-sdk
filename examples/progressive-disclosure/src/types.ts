@@ -4,14 +4,22 @@
  * Wire-format types corresponding to SEP-XXXX §2 and §3.
  * These intentionally mirror the structure of the existing MCP `Tool`
  * type so that the same record can be canonicalized and hashed for
- * `IndexedTool.schemaHash`.
+ * `ToolCatalogEntry.schemaHash`.
  */
 
 // -----------------------------------------------------------------------------
 // Method names and capability key.
 // -----------------------------------------------------------------------------
 
-export const METHOD_TOOLS_INDEX = 'tools/index' as const;
+/**
+ * Method name: `tools/catalog`.
+ *
+ * Note: the working name during early prototype development was `tools/index`;
+ * renamed to `tools/catalog` per SEP review feedback to avoid implying a
+ * search-primitive intent. The Rationale section of the SEP preserves the
+ * naming history and alternatives considered.
+ */
+export const METHOD_TOOLS_CATALOG = 'tools/catalog' as const;
 export const METHOD_TOOLS_DESCRIBE = 'tools/describe' as const;
 
 /** Capability key advertised under `serverCapabilities.tools`. */
@@ -55,10 +63,10 @@ export interface Tool {
 }
 
 // -----------------------------------------------------------------------------
-// IndexedTool — the cheap discovery record.
+// ToolCatalogEntry — the cheap discovery record.
 // -----------------------------------------------------------------------------
 
-export interface IndexedTool {
+export interface ToolCatalogEntry {
     name: string;
     title?: string;
     /**
@@ -79,14 +87,14 @@ export interface IndexedTool {
 // Request / response shapes for the new methods.
 // -----------------------------------------------------------------------------
 
-export interface ListIndexedToolsRequestParams {
+export interface ListToolsCatalogRequestParams {
     cursor?: string;
     /** Opaque search string. Server-defined semantics. */
     query?: string;
 }
 
-export interface ListIndexedToolsResult {
-    tools: IndexedTool[];
+export interface ListToolsCatalogResult {
+    tools: ToolCatalogEntry[];
     nextCursor?: string;
 }
 
@@ -106,7 +114,7 @@ export interface DescribeToolsResult {
 export interface ProgressiveDisclosureCapability {
     /**
      * Reserved for future granularity. Today this is a marker — presence
-     * means the server supports `tools/index`, `tools/describe`, the
+     * means the server supports `tools/catalog`, `tools/describe`, the
      * `query` parameter, and `schemaHash` consistency.
      */
     enabled: true;
@@ -116,11 +124,19 @@ export interface ProgressiveDisclosureCapability {
 // Errors.
 // -----------------------------------------------------------------------------
 
-/** JSON-RPC error code returned by `tools/describe` for unknown names. */
-export const ERR_UNKNOWN_TOOL_NAMES = -32602;
+/**
+ * JSON-RPC error code returned by `tools/describe` when one or more
+ * requested tool names are not available to the current session.
+ *
+ * -32002 is in the JSON-RPC server-defined range (-32000..-32099) and
+ * is deliberately distinct from -32602 (Invalid params), which would
+ * conflate a structurally valid request against a missing resource
+ * with a structurally invalid request. See SEP §3 for the reasoning.
+ */
+export const ERR_RESOURCE_NOT_AVAILABLE = -32002;
 
 export class UnknownToolNamesError extends Error {
-    public readonly code = ERR_UNKNOWN_TOOL_NAMES;
+    public readonly code = ERR_RESOURCE_NOT_AVAILABLE;
     public readonly data: { unknownNames: string[] };
 
     constructor(unknownNames: string[]) {

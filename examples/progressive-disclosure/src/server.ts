@@ -1,5 +1,5 @@
 /**
- * Server-side polyfill — derives `tools/index` and `tools/describe`
+ * Server-side polyfill — derives `tools/catalog` and `tools/describe`
  * from an existing tool catalog. Designed to be droppable onto any
  * MCP server with an existing `tools/list` handler.
  *
@@ -12,9 +12,9 @@ import { computeSchemaHash } from './schemaHash.js';
 import type {
     DescribeToolsRequestParams,
     DescribeToolsResult,
-    IndexedTool,
-    ListIndexedToolsRequestParams,
-    ListIndexedToolsResult,
+    ToolCatalogEntry,
+    ListToolsCatalogRequestParams,
+    ListToolsCatalogResult,
     Tool
 } from './types.js';
 import { UnknownToolNamesError } from './types.js';
@@ -24,7 +24,7 @@ export type QueryMatcher = (tool: Tool, query: string) => boolean;
 
 export interface ProgressiveDisclosureServerOptions {
     /**
-     * Maximum number of `IndexedTool` records returned per page.
+     * Maximum number of `ToolCatalogEntry` records returned per page.
      * Default: 100.
      */
     pageSize?: number;
@@ -37,7 +37,7 @@ export interface ProgressiveDisclosureServerOptions {
     describeBatchLimit?: number;
 
     /**
-     * How to derive `IndexedTool.summary` from a `Tool`. Defaults to
+     * How to derive `ToolCatalogEntry.summary` from a `Tool`. Defaults to
      * the first sentence of `description`, truncated to 200 chars.
      * Override to use a richer source (e.g. `annotations.title`,
      * a tier-aware short description, or a translation table).
@@ -45,14 +45,14 @@ export interface ProgressiveDisclosureServerOptions {
     deriveSummary?: (tool: Tool) => string;
 
     /**
-     * How to derive `IndexedTool.tags` from a `Tool`. Defaults to
+     * How to derive `ToolCatalogEntry.tags` from a `Tool`. Defaults to
      * `tool.annotations?.tags` if present and an array of strings,
      * otherwise undefined.
      */
     deriveTags?: (tool: Tool) => string[] | undefined;
 
     /**
-     * Query matcher invoked when `query` is present on `tools/index`.
+     * Query matcher invoked when `query` is present on `tools/catalog`.
      * Defaults to a case-insensitive substring search across name,
      * title, description, and tags.
      */
@@ -124,47 +124,47 @@ export class ProgressiveDisclosureServer {
         return h;
     }
 
-    /** Convert a `Tool` into its lightweight `IndexedTool` representation. */
-    public toIndexed(tool: Tool): IndexedTool {
-        const indexed: IndexedTool = {
+    /** Convert a `Tool` into its lightweight `ToolCatalogEntry` representation. */
+    public toCatalogEntry(tool: Tool): ToolCatalogEntry {
+        const entry: ToolCatalogEntry = {
             name: tool.name,
             summary: this.deriveSummary(tool),
             schemaHash: this.hashFor(tool)
         };
-        if (tool.title !== undefined) indexed.title = tool.title;
+        if (tool.title !== undefined) entry.title = tool.title;
         const tags = this.deriveTags(tool);
-        if (tags) indexed.tags = tags;
+        if (tags) entry.tags = tags;
         if (tool.annotations) {
-            // Surface only the well-known boolean hints in the index;
+            // Surface only the well-known boolean hints in the catalog;
             // richer annotations belong on the full Tool returned by
             // tools/describe.
-            const indexedAnnotations: Record<string, unknown> = {};
+            const catalogAnnotations: Record<string, unknown> = {};
             for (const k of ['readOnlyHint', 'destructiveHint', 'idempotentHint', 'openWorldHint'] as const) {
-                if (tool.annotations[k] !== undefined) indexedAnnotations[k] = tool.annotations[k];
+                if (tool.annotations[k] !== undefined) catalogAnnotations[k] = tool.annotations[k];
             }
-            if (Object.keys(indexedAnnotations).length > 0) {
-                indexed.annotations = indexedAnnotations;
+            if (Object.keys(catalogAnnotations).length > 0) {
+                entry.annotations = catalogAnnotations;
             }
         }
-        return indexed;
+        return entry;
     }
 
     /**
-     * Implement `tools/index`.
+     * Implement `tools/catalog`.
      *
      * If `query` is present, the configured matcher decides which tools
      * are returned. The result is paginated; clients pass the returned
      * `nextCursor` back to retrieve the next page.
      */
-    public listIndexedTools(params: ListIndexedToolsRequestParams = {}): ListIndexedToolsResult {
+    public listToolsCatalog(params: ListToolsCatalogRequestParams = {}): ListToolsCatalogResult {
         const all = this.catalog();
         const filtered = params.query ? all.filter((t) => this.queryMatcher(t, params.query!)) : all;
 
         const start = params.cursor ? parseCursor(params.cursor) : 0;
         const end = Math.min(start + this.pageSize, filtered.length);
         const page = filtered.slice(start, end);
-        const result: ListIndexedToolsResult = {
-            tools: page.map((t) => this.toIndexed(t))
+        const result: ListToolsCatalogResult = {
+            tools: page.map((t) => this.toCatalogEntry(t))
         };
         if (end < filtered.length) {
             result.nextCursor = encodeCursor(end);

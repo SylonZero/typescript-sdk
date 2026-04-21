@@ -16,9 +16,9 @@ import { ProgressiveDisclosureCache } from './client.js';
 import { ProgressiveDisclosureServer } from './server.js';
 import {
     METHOD_TOOLS_DESCRIBE,
-    METHOD_TOOLS_INDEX,
+    METHOD_TOOLS_CATALOG,
     type DescribeToolsRequestParams,
-    type ListIndexedToolsRequestParams
+    type ListToolsCatalogRequestParams
 } from './types.js';
 
 // --- Wire up an in-memory transport ----------------------------------------
@@ -27,8 +27,8 @@ const server = new ProgressiveDisclosureServer(SAMPLE_TOOLS);
 let describeCalls = 0;
 
 const request = async <T>(method: string, params?: unknown): Promise<T> => {
-    if (method === METHOD_TOOLS_INDEX) {
-        return server.listIndexedTools((params ?? {}) as ListIndexedToolsRequestParams) as T;
+    if (method === METHOD_TOOLS_CATALOG) {
+        return server.listToolsCatalog((params ?? {}) as ListToolsCatalogRequestParams) as T;
     }
     if (method === METHOD_TOOLS_DESCRIBE) {
         describeCalls++;
@@ -43,15 +43,15 @@ const cache = new ProgressiveDisclosureCache({ serverIdentity: 'mindstaq-mcp' })
 
 console.log('--- Turn 1: cold cache ---\n');
 
-const indexQ1 = await server.listIndexedTools({ query: 'task' });
-console.log(`tools/index?query=task → ${indexQ1.tools.length} indexed records`);
-for (const it of indexQ1.tools.slice(0, 5)) {
+const catalogQ1 = await server.listToolsCatalog({ query: 'task' });
+console.log(`tools/catalog?query=task → ${catalogQ1.tools.length} catalog records`);
+for (const it of catalogQ1.tools.slice(0, 5)) {
     console.log(`  • ${it.name.padEnd(24)} ${it.summary}`);
 }
-if (indexQ1.tools.length > 5) console.log(`  ... and ${indexQ1.tools.length - 5} more`);
+if (catalogQ1.tools.length > 5) console.log(`  ... and ${catalogQ1.tools.length - 5} more`);
 
-// Agent picks 3 candidates from the index.
-const candidates1 = indexQ1.tools.slice(0, 3);
+// Agent picks 3 candidates from the catalog.
+const candidates1 = catalogQ1.tools.slice(0, 3);
 console.log(`\nAgent picks: ${candidates1.map((c) => c.name).join(', ')}`);
 console.log('Resolving full schemas via cache...');
 const before1 = describeCalls;
@@ -64,8 +64,8 @@ console.log(`  cache size: ${cache._size()}`);
 
 console.log('\n--- Turn 2: agent picks 2 tools already seen in Turn 1 ---\n');
 
-const indexQ2 = await server.listIndexedTools({ query: 'task' });
-const candidates2 = [indexQ2.tools[0]!, indexQ2.tools[2]!];
+const catalogQ2 = await server.listToolsCatalog({ query: 'task' });
+const candidates2 = [catalogQ2.tools[0]!, catalogQ2.tools[2]!];
 console.log(`Agent picks: ${candidates2.map((c) => c.name).join(', ')}`);
 const before2 = describeCalls;
 const tools2 = await cache.materialize(candidates2, request);
@@ -76,7 +76,7 @@ console.log(`  resolved tools: ${tools2.map((t) => t.name).join(', ')}`);
 
 console.log('\n--- Turn 3: agent picks 1 new tool + 2 cached ---\n');
 
-const candidates3 = [indexQ2.tools[0]!, indexQ2.tools[2]!, indexQ2.tools[5]!];
+const candidates3 = [catalogQ2.tools[0]!, catalogQ2.tools[2]!, catalogQ2.tools[5]!];
 console.log(`Agent picks: ${candidates3.map((c) => c.name).join(', ')}`);
 const before3 = describeCalls;
 const tools3 = await cache.materialize(candidates3, request);
@@ -88,7 +88,7 @@ console.log(`  cache size: ${cache._size()}`);
 
 console.log('\n--- Simulated list_changed: 1 tool re-hashed ---\n');
 
-const fresh = await server.listIndexedTools({ query: 'task' });
+const fresh = await server.listToolsCatalog({ query: 'task' });
 // Tamper with one hash to simulate a schema change for that tool.
 fresh.tools[0]!.schemaHash = 'deadbeef'.repeat(8);
 const evict = cache.reconcile(fresh.tools);

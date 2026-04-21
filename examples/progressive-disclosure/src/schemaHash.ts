@@ -1,5 +1,5 @@
 /**
- * Schema hash for IndexedTool.schemaHash.
+ * Schema hash for ToolCatalogEntry.schemaHash.
  *
  * The hash is the lowercase hex SHA-256 digest of the canonical JSON
  * serialization of the full Tool record (including name, title,
