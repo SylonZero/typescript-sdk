@@ -38,7 +38,7 @@ examples/progressive-disclosure/
 │   └── index.ts            # Public re-exports
 ├── bench/
 │   ├── sampleTools.ts      # 37 synthetic MindStaq-shaped tools
-│   ├── tokenize.ts         # Two clearly-labelled token estimators
+│   ├── tokenize.ts         # cl100k_base tiktoken (primary) + 2 legacy heuristics
 │   ├── runBench.ts         # The benchmark
 │   └── results.md          # Captured benchmark output
 ├── tests/
@@ -64,19 +64,19 @@ npm run demo        # in-process end-to-end lifecycle
 
 ## Latest benchmark numbers
 
-From `bench/results.md`, run on April 21, 2026 with the included 37-tool synthetic catalog:
+From `bench/results.md`, run on April 21, 2026 with the included 37-tool synthetic catalog. Tokens measured with `cl100k_base` via `js-tiktoken`.
 
-| Scenario                                  | Bytes  | Tokens (chars/4) | Tokens (JSON-aware) | Savings vs baseline |
-| ----------------------------------------- | -----: | ---------------: | ------------------: | ------------------: |
-| Baseline `tools/list` (n=37)              | 20,709 |            5,178 |               7,882 |                   — |
-| `tools/catalog` only                        |  9,639 |            2,410 |               3,289 |               53.5% |
-| `tools/catalog` + `tools/describe(k=1)`     | 10,796 |            2,699 |               3,714 |               47.9% |
-| `tools/catalog` + `tools/describe(k=3)`     | 11,771 |            2,943 |               4,089 |               43.2% |
-| `tools/catalog` + `tools/describe(k=5)`     | 12,938 |            3,235 |               4,528 |               37.5% |
-| `tools/catalog` + `tools/describe(k=10)`    | 16,654 |            4,164 |               5,928 |               19.6% |
-| Steady state (cache hit, catalog only)    |  9,639 |            2,410 |               3,289 |               53.5% |
+| Scenario                                   | Bytes  | Tokens (cl100k_base) | Savings vs baseline |
+| ------------------------------------------ | -----: | -------------------: | ------------------: |
+| Baseline `tools/list` (n=37)               | 20,709 |                5,238 |                   — |
+| `tools/catalog` only                       |  9,639 |                2,919 |               44.3% |
+| `tools/catalog` + `tools/describe(k=1)`    | 10,796 |                3,223 |               38.5% |
+| `tools/catalog` + `tools/describe(k=3)`    | 11,771 |                3,458 |               34.0% |
+| `tools/catalog` + `tools/describe(k=5)`    | 12,938 |                3,767 |               28.1% |
+| `tools/catalog` + `tools/describe(k=10)`   | 16,654 |                4,732 |                9.7% |
+| Steady state (cache hit, catalog only)     |  9,639 |                2,919 |               44.3% |
 
-Token estimates use `Math.ceil(chars / 4)` (conservative GPT-style heuristic) and a JSON-aware estimate (`{}[]:,` count as 1 token each + 3.5 chars/token for the rest, closer to cl100k_base on schema payloads). For canonical SEP numbers, swap in tiktoken or the Anthropic tokenizer; the relative shape of the table holds across tokenizers.
+`cl100k_base` is the encoding used by GPT-3.5-turbo, GPT-4, and GPT-4o, and is a defensible proxy for Anthropic's tokenizer on schema-heavy JSON payloads. Reproduce these exact numbers with `npm install && npm run bench`.
 
 ## What this prototype is not
 
@@ -84,9 +84,11 @@ Token estimates use `Math.ceil(chars / 4)` (conservative GPT-style heuristic) an
 - Not a full implementation of every option in the SEP (no glob filtering from SEP-2564, no scope filtering from SEP-1881, no per-call resolve from SEP-1862). The SEP §6 explains how those compose; this prototype is scoped to the new primitives.
 - Not a network reference server. The `demo.ts` runs the server and client in-process via a synchronous `RequestFn`, which is enough to prove the protocol works end-to-end. Wiring stdio or HTTP is mechanical.
 
-## Reproducing the benchmark with a real tokenizer
+## Tokenizer choice
 
-Replace `bench/tokenize.ts` with a wrapper around the `tiktoken` npm package or any Anthropic-compatible tokenizer, then re-run `npm run bench`. The harness records both byte counts and token counts so the relative comparison is the artifact, not any single absolute number.
+The benchmark uses `cl100k_base` via [`js-tiktoken`](https://www.npmjs.com/package/js-tiktoken) — the encoding used by GPT-3.5-turbo, GPT-4, and GPT-4o, and a defensible proxy for Anthropic's tokenizer on JSON-shaped payloads.
+
+To re-run with a different tokenizer (e.g., the Anthropic SDK's tokenizer or `o200k_base` for GPT-4o-specific exactness), edit `bench/tokenize.ts` — `countTokensTiktoken` is the only function `runBench.ts` calls for SEP-published numbers; the two heuristic estimators alongside it are retained only as sanity-check references.
 
 ## License
 

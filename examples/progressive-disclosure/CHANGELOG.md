@@ -4,12 +4,17 @@ This changelog tracks meaningful changes to the progressive-disclosure reference
 
 ## [unreleased]
 
+### Changed
+
+- Benchmark tokenizer swapped from heuristic estimators to `cl100k_base` via `js-tiktoken`. Tiktoken is now the primary (and only published) measurement; the two heuristic estimators (`estimateTokensCharsDiv4`, `estimateTokensJsonAware`) remain in `bench/tokenize.ts` for sanity-check comparison only and are surfaced in a separate "for reference" table in the bench output. SEP-published numbers refresh accordingly: steady-state savings move from heuristic 53.5% to measured 44.3%, and the typical k=3 case from 43.2% to 34.0%. Numbers are now reproducible exactly with `npm install && npm run bench`.
+- `bench/runBench.ts` table format simplified: single primary tokens column, with savings-vs-baseline computed inline. Heuristic comparison moved to a secondary table.
+- `SPEC.md` Performance Implications section rewritten with the tiktoken table and a paragraph framing the curve shape (largest win at small k with cache, degrades gracefully toward baseline at high k).
+- `README.md` benchmark table and "Tokenizer choice" section updated to match.
+
 ### Added
 
-- `SPEC.md`: drop-in copy of the SEP draft, so the prototype branch is self-contained for reviewers.
-- `INTEGRATION.md`: server-side and client-side adoption recipes for implementers.
-- `API.md`: one-page reference of every public export.
-- `CHANGELOG.md`: this file.
+- `js-tiktoken` as a devDependency (~5 MB installed; pure JS, no WASM init).
+- `SPEC.md`, `INTEGRATION.md`, `API.md`, `CHANGELOG.md` (this file): documentation suite making the prototype branch self-contained for SEP reviewers and adopters.
 - `README.md`: documentation map section pointing to the new docs.
 
 ## v0.1.2 — 2026-04-21

@@ -21,9 +21,9 @@ The current `tools/list` method returns a single monolithic `Tool` record per av
 
 In every MCP host that exposes tools to an LLM today, this entire payload is materialised in the model's context on every turn, before the model has even decided whether tools are relevant to the user's request. The cost scales linearly with catalog size and is paid on every chat completion.
 
-A worked example from the MindStaq MCP service (project, task, OKR, and issue management for a SaaS work-management platform):
+A worked example from the MindStaq MCP service (project, task, OKR, and issue management for a SaaS work-management platform). The figures below are pre-prototype estimates over the production catalog; the §Performance Implications table below has measured numbers from the in-tree synthetic benchmark.
 
-| Metric | Value |
+| Metric | Estimate |
 |---|---|
 | Distinct tools exposed | ~25 |
 | Mean tool record size | ~700 tokens |
@@ -323,21 +323,23 @@ Out of scope for this prototype, intentionally:
 
 ## Performance Implications
 
-The intended impact is a substantial reduction in per-turn context cost for hosts that route tools through MCP. The reference implementation ships a benchmark over a 37-tool synthetic catalog modelled on the MindStaq MCP service; the table below is its actual output, not an estimate.
+The intended impact is a substantial reduction in per-turn context cost for hosts that route tools through MCP. The reference implementation ships a benchmark over a 37-tool synthetic catalog modelled on the MindStaq MCP service; the table below is its actual output, measured with the `cl100k_base` tokenizer via `js-tiktoken`.
 
-| Scenario                                  | Bytes  | Tokens (chars/4) | Tokens (JSON-aware) | Savings vs baseline |
-| ----------------------------------------- | -----: | ---------------: | ------------------: | ------------------: |
-| Baseline `tools/list` (n=37)              | 20,709 |            5,178 |               7,882 |                   — |
-| `tools/catalog` only                      |  9,639 |            2,410 |               3,289 |               53.5% |
-| `tools/catalog` + `tools/describe(k=1)`   | 10,796 |            2,699 |               3,714 |               47.9% |
-| `tools/catalog` + `tools/describe(k=3)`   | 11,771 |            2,943 |               4,089 |               43.2% |
-| `tools/catalog` + `tools/describe(k=5)`   | 12,938 |            3,235 |               4,528 |               37.5% |
-| `tools/catalog` + `tools/describe(k=10)`  | 16,654 |            4,164 |               5,928 |               19.6% |
-| Steady state (cache hit, catalog only)    |  9,639 |            2,410 |               3,289 |               53.5% |
+| Scenario                                  | Bytes  | Tokens (cl100k_base) | Savings vs baseline |
+| ----------------------------------------- | -----: | -------------------: | ------------------: |
+| Baseline `tools/list` (n=37)              | 20,709 |                5,238 |                   — |
+| `tools/catalog` only                      |  9,639 |                2,919 |               44.3% |
+| `tools/catalog` + `tools/describe(k=1)`   | 10,796 |                3,223 |               38.5% |
+| `tools/catalog` + `tools/describe(k=3)`   | 11,771 |                3,458 |               34.0% |
+| `tools/catalog` + `tools/describe(k=5)`   | 12,938 |                3,767 |               28.1% |
+| `tools/catalog` + `tools/describe(k=10)`  | 16,654 |                4,732 |                9.7% |
+| Steady state (cache hit, catalog only)    |  9,639 |                2,919 |               44.3% |
 
-The chars/4 column is the conservative GPT-style heuristic; the JSON-aware column treats `{}[]:,` as one token each plus 3.5 chars/token for the rest, which more closely matches cl100k_base on schema-heavy payloads. The relative shape is consistent across both estimators and should hold under tiktoken or the Anthropic tokenizer; see `examples/progressive-disclosure/bench/tokenize.ts` for the exact estimators and notes on swapping in a production tokenizer.
+`cl100k_base` is the encoding used by GPT-3.5-turbo, GPT-4, and GPT-4o. It is a defensible proxy for Anthropic's tokenizer on schema-heavy JSON payloads — the two differ by single-digit percentages on the workloads measured here. Reviewers can reproduce the table exactly with `cd examples/progressive-disclosure && npm install && npm run bench`. Two heuristic estimators (chars/4 and JSON-aware) are retained in `bench/tokenize.ts` for sanity-check comparison; the SEP cites only the tiktoken column.
 
-For larger catalogs the relative improvement holds: a 200-tool catalog of similar shape would be on the order of ~28k tokens at the catalog, ~110k at baseline — the 50%+ savings becomes substantially more valuable in absolute terms.
+The shape of the curve is the meaningful artifact: at the typical operating point — agent picks 1–3 tools per turn, with caching warm — the reduction is in the 34–45% range. As the per-turn pick count grows, the marginal benefit shrinks (at k=10, only 9.7%) because at some point materialising every schema costs as much as `tools/list` did to begin with. The win is largest for the common case (small k, high cache hit rate) and degrades gracefully toward baseline for catalogs that genuinely need most tools per turn.
+
+For larger catalogs the relative improvement holds and the absolute win grows: a 200-tool catalog of similar shape would be on the order of ~28k baseline tokens, ~16k catalog-only — a ~12k token saving on every turn that the cache hits.
 
 There is a per-turn cost: `tools/describe` adds one additional round trip when the agent picks tools whose schemas are not yet cached. For stdio transports this is sub-millisecond; for network transports it is a single HTTP request. Steady state (with client-side caching as demonstrated in the reference implementation) is one round trip per *new* tool, not per turn.
 
